@@ -1,0 +1,137 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+
+-- Get effect templates
+local explosionTemplate = ReplicatedStorage:FindFirstChild("ExplosionEffect")
+local impactTemplate = ReplicatedStorage:FindFirstChild("ImpactEffect")
+local trailTemplate = ReplicatedStorage:FindFirstChild("TrailEffect")
+
+-- Fungsi untuk membuat efek ledakan
+local function createExplosion(position)
+    if not explosionTemplate then return end
+    
+    local explosion = explosionTemplate:Clone()
+    explosion.Parent = Workspace
+    
+    -- Position all parts
+    for _, part in pairs(explosion:GetChildren()) do
+        if part:IsA("BasePart") then
+            part.Position = position
+            
+            -- Animate explosion
+            local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            
+            -- Scale up and fade out
+            local scaleTween = TweenService:Create(part, tweenInfo, {
+                Size = part.Size * 3,
+                Transparency = 1
+            })
+            
+            scaleTween:Play()
+            Debris:AddItem(part, 0.5)
+        end
+    end
+    
+    -- Clean up explosion folder
+    Debris:AddItem(explosion, 1)
+end
+
+-- Fungsi untuk membuat efek impact
+local function createImpact(position)
+    if not impactTemplate then return end
+    
+    local impact = impactTemplate:Clone()
+    impact.Parent = Workspace
+    
+    for _, part in pairs(impact:GetChildren()) do
+        if part:IsA("BasePart") then
+            part.Position = position
+            
+            -- Animate impact
+            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            
+            local scaleTween = TweenService:Create(part, tweenInfo, {
+                Size = part.Size * 2,
+                Transparency = 1
+            })
+            
+            scaleTween:Play()
+            Debris:AddItem(part, 0.3)
+        end
+    end
+    
+    Debris:AddItem(impact, 0.5)
+end
+
+-- Fungsi untuk membuat trail untuk peluru
+local function createTrail(peluru)
+    if not trailTemplate then return end
+    
+    local trail = trailTemplate:Clone()
+    trail.Parent = Workspace
+    
+    -- Update trail position to follow bullet
+    local connection
+    connection = game:GetService("RunService").Heartbeat:Connect(function()
+        if peluru and peluru.Parent then
+            trail.Position = peluru.Position
+            trail.CFrame = peluru.CFrame
+        else
+            if connection then
+                connection:Disconnect()
+            end
+            Debris:AddItem(trail, 1)
+        end
+    end)
+    
+    Debris:AddItem(trail, 10)
+end
+
+-- Setup peluru dengan efek
+local function setupPeluruEffects(peluru)
+    if peluru.Name ~= "Peluru" or not peluru:IsA("BasePart") then return end
+    
+    -- Buat trail
+    createTrail(peluru)
+    
+    local connection
+    connection = peluru.Touched:Connect(function(hit)
+        if hit.Transparency == 1 then return end
+        
+        -- Buat efek impact
+        createImpact(peluru.Position)
+        
+        -- Buat ledakan terrain
+        local Terrain = workspace.Terrain
+        Terrain:FillBall(peluru.Position, 8, Enum.Material.Air)
+        
+        -- Buat efek ledakan visual
+        createExplosion(peluru.Position)
+        
+        -- Buat ledakan damage
+        local exp = Instance.new("Explosion")
+        exp.Position = peluru.Position
+        exp.BlastRadius = 8
+        exp.BlastPressure = 500000
+        exp.DestroyJointRadiusPercent = 0
+        exp.Parent = Workspace
+        
+        connection:Disconnect()
+        peluru:Destroy()
+    end)
+    
+    Debris:AddItem(peluru, 10)
+end
+
+-- Connect ke peluru baru
+Workspace.DescendantAdded:Connect(setupPeluruEffects)
+
+-- Setup peluru yang sudah ada
+for _, descendant in pairs(Workspace:GetDescendants()) do
+    setupPeluruEffects(descendant)
+end
+
+print("DuelEffects initialized")
+print("Visual effects for duels are now active!")

@@ -1,0 +1,188 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
+
+local player = Players.LocalPlayer
+local turnEvent = ReplicatedStorage:WaitForChild("TurnSystemEvent")
+
+-- 1. Buat suara notifikasi
+local turnSound = Instance.new("Sound")
+turnSound.SoundId = "rbxassetid://131961023" 
+turnSound.Volume = 0.3
+turnSound.Parent = SoundService
+
+-- 2. Buat GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TurnBasedGUI"
+screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.ResetOnSpawn = false
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Parent = screenGui
+mainFrame.Size = UDim2.new(0, 300, 0, 180)
+mainFrame.Position = UDim2.new(0.5, -150, 0, 20)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderSizePixel = 0
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local turnLabel = Instance.new("TextLabel")
+turnLabel.Name = "TurnLabel"
+turnLabel.Parent = mainFrame
+turnLabel.Size = UDim2.new(1, -20, 0, 35)
+turnLabel.Position = UDim2.new(0, 10, 0, 5)
+turnLabel.BackgroundTransparency = 1
+turnLabel.Text = "Menunggu pemain..."
+turnLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+turnLabel.TextScaled = true
+turnLabel.Font = Enum.Font.SourceSansBold
+
+local timerLabel = Instance.new("TextLabel")
+timerLabel.Name = "TimerLabel"
+timerLabel.Parent = mainFrame
+timerLabel.Size = UDim2.new(1, -20, 0, 25)
+timerLabel.Position = UDim2.new(0, 10, 0, 40)
+timerLabel.BackgroundTransparency = 1
+timerLabel.Text = "Waktu: --"
+timerLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+timerLabel.TextScaled = true
+timerLabel.Font = Enum.Font.SourceSans
+
+-- Menambahkan WindLabel
+local windLabel = Instance.new("TextLabel")
+windLabel.Name = "WindLabel"
+windLabel.Parent = mainFrame
+windLabel.Size = UDim2.new(1, -20, 0, 25)
+windLabel.Position = UDim2.new(0, 10, 0, 65)
+windLabel.BackgroundTransparency = 1
+windLabel.Text = "Angin: 0"
+windLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
+windLabel.TextScaled = true
+windLabel.Font = Enum.Font.SourceSansItalic
+
+-- Menambahkan StatusLabel
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Name = "StatusLabel"
+statusLabel.Parent = mainFrame
+statusLabel.Size = UDim2.new(1, -20, 0, 25)
+statusLabel.Position = UDim2.new(0, 10, 0, 90)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: Menunggu..."
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.SourceSans
+
+local endTurnButton = Instance.new("TextButton")
+endTurnButton.Name = "EndTurnButton"
+endTurnButton.Parent = mainFrame
+endTurnButton.Size = UDim2.new(1, -20, 0, 35)
+endTurnButton.Position = UDim2.new(0, 10, 0, 120)
+endTurnButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+endTurnButton.Text = "Akhiri Giliran"
+endTurnButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+endTurnButton.TextScaled = true
+endTurnButton.Font = Enum.Font.SourceSansBold
+endTurnButton.Visible = false
+
+local buttonCorner = Instance.new("UICorner", endTurnButton)
+buttonCorner.CornerRadius = UDim.new(0, 8)
+
+-- State Lokal
+local isMyTurn = false
+local playersInGame = {}
+local currentPlayerIndex = 0
+
+-- Fungsi Helper
+local function toggleMovement(enabled)
+	local character = player.Character
+	if character then
+		local humanoid = character:FindFirstChild("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = enabled and 16 or 0 
+			humanoid.JumpPower = enabled and 50 or 0
+		end
+	end
+end
+
+local function updateGUI()
+	if currentPlayerIndex == 0 or #playersInGame == 0 then
+		turnLabel.Text = "Menunggu pemain..."
+		endTurnButton.Visible = false
+		return
+	end
+
+	local currentPlayer = playersInGame[currentPlayerIndex]
+	if currentPlayer == player then
+		isMyTurn = true
+		turnLabel.Text = "Giliran Anda!"
+		endTurnButton.Visible = true
+		mainFrame.BackgroundColor3 = Color3.fromRGB(50, 100, 50)
+	else
+		isMyTurn = false
+		turnLabel.Text = "Giliran: " .. (currentPlayer.Name or "Pemain")
+		endTurnButton.Visible = false
+		mainFrame.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
+	end
+end
+
+-- Event Listener
+turnEvent.OnClientEvent:Connect(function(action, ...)
+	local args = {...}
+
+	if action == "GameStarted" then
+		playersInGame = args[1]
+		currentPlayerIndex = args[2]
+		updateGUI()
+		toggleMovement(playersInGame[currentPlayerIndex] == player)
+
+	elseif action == "TurnChanged" then
+		currentPlayerIndex = args[1]
+		updateGUI()
+
+		local isNowMyTurn = (playersInGame[currentPlayerIndex] == player)
+		toggleMovement(isNowMyTurn)
+
+		if isNowMyTurn then
+			turnSound:Play()
+			StarterGui:SetCore("ChatMakeSystemMessage", {
+				Text = "[Sistem] Giliran Anda!";
+				Color = Color3.fromRGB(100, 255, 100);
+			})
+		end
+
+	elseif action == "UpdateWind" then
+		local windPower = args[1]
+		windLabel.Text = "Angin: " .. windPower
+
+	elseif action == "TimerUpdate" then
+		local timeRemaining = args[1]
+		timerLabel.Text = "Waktu: " .. math.ceil(timeRemaining) .. "s"
+		timerLabel.TextColor3 = timeRemaining <= 5 and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 255, 100)
+
+	elseif action == "GameEnded" then
+		toggleMovement(true)
+		playersInGame = {}
+		currentPlayerIndex = 0
+		updateGUI()
+	
+	elseif action == "UpdateStatus" then
+		local statusText = ...
+		-- Update StatusLabel yang sudah dibuat
+		if screenGui:FindFirstChild("MainFrame") and screenGui.MainFrame:FindFirstChild("StatusLabel") then
+			screenGui.MainFrame.StatusLabel.Text = statusText
+		end
+	
+end)
+
+endTurnButton.MouseButton1Click:Connect(function()
+	if isMyTurn then
+		turnEvent:FireServer("EndTurn")
+	end
+end)
+
+print("Turn-based GUI Fixed & Initialized")

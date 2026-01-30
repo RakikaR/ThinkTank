@@ -1,0 +1,94 @@
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TembakEvent = ReplicatedStorage:WaitForChild("TembakEvent")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local playerGui = player:WaitForChild("PlayerGui")
+
+local power = 0
+local charging = false
+local chargeLoop = nil
+
+-- Function to start charging
+local function startCharging()
+	if charging then return end
+	
+	charging = true
+	power = 0
+	print("Mengisi Tenaga...")
+	
+	-- Update mobile button visual if exists
+	local mobileGui = playerGui:FindFirstChild("MobileShootGui")
+	if mobileGui then
+		local shootButton = mobileGui:FindFirstChild("ShootButton")
+		if shootButton then
+			shootButton.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+			shootButton.Text = "CHARGING..."
+		end
+	end
+	
+	-- Loop untuk mengisi power bar
+	chargeLoop = task.spawn(function()
+		while charging do
+			power = math.min(power + 2, 150) -- Maksimal power 150
+			task.wait(0.05)
+		end
+	end)
+end
+
+-- Function to stop charging and shoot
+local function stopCharging()
+	if not charging then return end
+	
+	charging = false
+	
+	-- Cancel charge loop if still running
+	if chargeLoop then
+		task.cancel(chargeLoop)
+		chargeLoop = nil
+	end
+	
+	print("Tembak! Power: " .. power)
+	
+	-- Reset mobile button visual if exists
+	local mobileGui = playerGui:FindFirstChild("MobileShootGui")
+	if mobileGui then
+		local shootButton = mobileGui:FindFirstChild("ShootButton")
+		if shootButton then
+			shootButton.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
+			shootButton.Text = "SHOOT"
+		end
+	end
+	
+	local char = player.Character
+	if char and char:FindFirstChild("HumanoidRootPart") then
+		-- Arah tembakan adalah ke mana Mouse menunjuk
+		local direction = (mouse.Hit.p - char.HumanoidRootPart.Position).Unit
+		TembakEvent:FireServer(char.HumanoidRootPart.Position, direction, power)
+	end
+	
+	-- Reset power
+	power = 0
+end
+
+-- Mouse/Touch input detection
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	
+	-- Left mouse button or touch
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		startCharging()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, processed)
+	if processed then return end
+	
+	-- Left mouse button or touch
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		stopCharging()
+	end
+end)
+
+print("Power System initialized with Mouse and Mobile support")

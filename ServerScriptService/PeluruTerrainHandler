@@ -1,0 +1,37 @@
+local Terrain = workspace.Terrain
+local Debris = game:GetService("Debris")
+
+local HOLE_RADIUS = 8 
+
+local function createTerrainHole(position)
+	Terrain:FillBall(position, HOLE_RADIUS, Enum.Material.Air)
+end
+
+local function setupPeluru(peluru)
+	if peluru.Name ~= "Peluru" or not peluru:IsA("BasePart") then return end
+
+	local connection
+	connection = peluru.Touched:Connect(function(hit)
+		if hit.Transparency == 1 then return end 
+
+		createTerrainHole(peluru.Position)
+
+		-- BUAT LEDAKAN DAMAGE
+		local exp = Instance.new("Explosion")
+		exp.Position = peluru.Position
+		exp.BlastRadius = HOLE_RADIUS -- Area ledakan
+		exp.BlastPressure = 500000 -- Kekuatan dorong
+
+		-- [PENTING] Set ke 0 agar karakter tidak langsung pecah berkeping-keping
+		exp.DestroyJointRadiusPercent = 0 
+
+		exp.Parent = workspace
+
+		connection:Disconnect()
+		peluru:Destroy()
+	end)
+
+	Debris:AddItem(peluru, 10)
+end
+
+workspace.DescendantAdded:Connect(setupPeluru)

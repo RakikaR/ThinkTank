@@ -1,0 +1,195 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+-- Buat RemoteEvent untuk komunikasi jika belum ada
+local turnEvent = ReplicatedStorage:FindFirstChild("TurnSystemEvent")
+if not turnEvent then
+    turnEvent = Instance.new("RemoteEvent")
+    turnEvent.Name = "TurnSystemEvent"
+    turnEvent.Parent = ReplicatedStorage
+end
+
+-- Konfigurasi sistem
+local TURN_TIME = 20 -- detik per giliran
+local MAX_PLAYERS = 2
+
+-- State sistem
+local gameState = {
+    players = {},
+    currentPlayerIndex = 1,
+    isGameActive = false,
+    timeRemaining = TURN_TIME,
+    turnStartTime = 0
+}
+
+-- Fungsi untuk memulai game
+local function startGame()
+    if gameState.isGameActive then return end
+    
+    local playersInGame = Players:GetPlayers()
+    if #playersInGame < 2 then
+        warn("Membutuhkan minimal 2 pemain untuk memulai game")
+        return
+    end
+    
+    -- Ambil 2 pemain pertama
+    gameState.players = {}
+    for i = 1, math.min(MAX_PLAYERS, #playersInGame) do
+        table.insert(gameState.players, playersInGame[i])
+    end
+    
+    gameState.isGameActive = true
+    gameState.currentPlayerIndex = 1
+    gameState.turnStartTime = tick()
+    gameState.timeRemaining = TURN_TIME
+    
+    -- Kirim informasi awal ke semua pemain
+    turnEvent:FireAllClients("GameStarted", gameState.players, gameState.currentPlayerIndex, TURN_TIME)
+    
+    print("Game dimulai dengan " .. #gameState.players .. " pemain")
+end
+
+-- Fungsi untuk pindah giliran
+local function nextTurn()
+    if not gameState.isGameActive then return end
+    
+    gameState.currentPlayerIndex = gameState.currentPlayerIndex + 1
+    if gameState.currentPlayerIndex > #gameState.players then
+        gameState.currentPlayerIndex = 1
+    end
+    
+    gameState.turnStartTime = tick()
+	gameState.timeRemaining = TURN_TIME
+	
+	-- Update pemain aktif di variabel global
+	_G.CurrentActivePlayer = gameState.players[gameState.currentPlayerIndex]
+
+	-- Update Angin Baru
+	local windX = math.random(-60, 60) -- Kekuatan angin acak
+	_G.CurrentWind = Vector3.new(windX, 0, 0)
+
+	-- Kirim info angin ke semua client untuk UI
+	ReplicatedStorage.TurnSystemEvent:FireAllClients("UpdateWind", windX)
+    
+    -- Kirim informasi giliran baru ke semua pemain
+	turnEvent:FireAllClients("TurnChanged", gameState.currentPlayerIndex, TURN_TIME)
+    
+    print("Giliran pindah ke: " .. gameState.players[gameState.currentPlayerIndex].Name)
+end
+
+-- Fungsi untuk mengakhiri giliran (dipanggil oleh pemain)
+local function endTurn(player)
+    if not gameState.isGameActive then return end
+    
+    -- Pastikan hanya pemain yang sedang giliran yang bisa mengakhiri
+    local currentPlayer = gameState.players[gameState.currentPlayerIndex]
+    if player ~= currentPlayer then
+        return
+    end
+    
+    nextTurn()
+end
+
+-- Update timer setiap frame
+local function updateTimer()
+    if not gameState.isGameActive then return end
+    
+    local elapsed = tick() - gameState.turnStartTime
+    gameState.timeRemaining = math.max(0, TURN_TIME - elapsed)
+    
+    -- Kirim update timer ke semua pemain
+    turnEvent:FireAllClients("TimerUpdate", gameState.timeRemaining)
+    
+    -- Jika waktu habis, pindah giliran
+    if gameState.timeRemaining <= 0 then
+        nextTurn()
+    end
+end
+
+-- Connect event untuk pemain yang bergabung
+local function onPlayerAdded(player)
+    -- Jika game belum aktif dan ada cukup pemain, mulai game
+    if not gameState.isGameActive then
+        local totalPlayers = #Players:GetPlayers()
+        if totalPlayers >= 2 then
+            task.wait(2) -- Tunggu sebentar agar semua pemain siap
+            startGame()
+        end
+    end
+end
+
+-- Connect event untuk pemain yang keluar
+local function onPlayerRemoving(player)
+    -- Hapus pemain dari daftar jika ada
+    for i, p in ipairs(gameState.players) do
+        if p == player then
+            table.remove(gameState.players, i)
+            
+            -- Jika pemain yang keluar sedang giliran, pindah giliran
+            if gameState.isGameActive and i == gameState.currentPlayerIndex then
+                if #gameState.players > 0 then
+                    gameState.currentPlayerIndex = math.min(gameState.currentPlayerIndex, #gameState.players)
+                    nextTurn()
+                else
+                    -- Stop game jika tidak ada pemain lagi
+                    gameState.isGameActive = false
+                    turnEvent:FireAllClients("GameEnded")
+				end
+				if gameState.isGameActive == false then
+					turnEvent:FireAllClients("GameEnded") -- Ke Client
+					-- Kita butuh cara memberi tahu GameLoop server, gunakan BindableEvent atau flag global
+					-- Cara simpel:
+					local GameLoopEnd = Instance.new("BindableEvent")
+					GameLoopEnd.Name = "GameEndSignal"
+					GameLoopEnd.Parent = ReplicatedStorage
+					GameLoopEnd:Fire()
+				end
+            end
+            break
+        end
+    end
+end
+
+-- Connect RemoteEvent
+turnEvent.OnServerEvent:Connect(function(player, action, ...)
+    if action == "EndTurn" then
+        endTurn(player)
+    end
+end)
+
+-- Connect player events
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- Start update loop
+RunService.Heartbeat:Connect(updateTimer)
+
+-- Cek apakah ada pemain saat script dimulai
+task.wait(1)
+--if #Players:GetPlayers() >= 2 then
+--    startGame()
+end
+
+-- Fungsi untuk memberikan notifikasi ke pemain
+local function notifyPlayer(player, message, color)
+    local success, error = pcall(function()
+        player:SetAttribute("SystemMessage", message)
+        player:SetAttribute("MessageColor", color)
+    end)
+end
+
+-- Fungsi untuk testing - bisa dipanggil dari command bar
+local function forceStartGame()
+    startGame()
+end
+
+-- Export fungsi untuk testing
+_G.ForceStartTurnBasedGame = forceStartGame
+
+_G.StartTurnGame = function()
+	startGame() -- Memanggil fungsi lokal startGame
+end
+
+print("Turn-based system initialized")
+print("Gunakan _G.ForceStartTurnBasedGame() untuk memulai game secara manual")

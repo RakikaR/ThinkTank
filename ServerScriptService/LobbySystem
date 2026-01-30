@@ -1,0 +1,237 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+
+-- RemoteEvents
+local lobbyEvent = ReplicatedStorage:FindFirstChild("LobbyEvent")
+if not lobbyEvent then
+    lobbyEvent = Instance.new("RemoteEvent")
+    lobbyEvent.Name = "LobbyEvent"
+    lobbyEvent.Parent = ReplicatedStorage
+end
+
+local duelEvent = ReplicatedStorage:FindFirstChild("DuelEvent")
+if not duelEvent then
+    duelEvent = Instance.new("RemoteEvent")
+    duelEvent.Name = "DuelEvent"
+    duelEvent.Parent = ReplicatedStorage
+end
+
+-- Lobby state
+local lobbyState = {
+    waitingPlayers = {},
+    readyPlayers = {},
+    activeDuels = {}
+}
+
+-- Lobby spawn
+local lobbySpawn = Workspace:WaitForChild("LobbyMap"):WaitForChild("SpawnLocation")
+
+-- Maps
+local mapsFolder = ServerStorage:WaitForChild("Maps")
+
+-- Fungsi untuk teleport ke lobby
+local function teleportToLobby(player)
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = lobbySpawn.CFrame + Vector3.new(0, 3, 0)
+    end
+end
+
+-- Fungsi untuk meminta client membuat GUI lobby
+local function requestLobbyGUI(player)
+    lobbyEvent:FireClient(player, "CreateLobbyGUI")
+end
+
+-- Fungsi untuk update UI lobby
+local function updateLobbyUI()
+    print("Updating lobby UI for all players...")
+    
+    -- Prepare player data for clients
+    local playerList = {}
+    for player, _ in pairs(lobbyState.waitingPlayers) do
+        table.insert(playerList, {
+            name = player.Name,
+            ready = lobbyState.readyPlayers[player] == true
+        })
+    end
+    
+    -- Send update to all players
+    for _, player in pairs(Players:GetPlayers()) do
+        lobbyEvent:FireClient(player, "UpdateLobbyUI", playerList, lobbyState.readyPlayers)
+    end
+    
+    print("Sent lobby update to all players")
+end
+
+-- Fungsi untuk memulai duel
+local function startDuel(player1, player2)
+    print("Starting duel between", player1.Name, "and", player2.Name)
+    
+    -- Pilih map secara acak
+    local availableMaps = mapsFolder:GetChildren()
+    local chosenMap = availableMaps[math.random(1, #availableMaps)]:Clone()
+    chosenMap.Parent = Workspace
+    
+    -- Dapatkan spawn points
+    local spawns = chosenMap:FindFirstChild("Spawns")
+    if not spawns then
+        warn("Map tidak punya folder Spawns!")
+        return
+    end
+    
+    local spawn1 = spawns:FindFirstChild("Spawn1")
+    local spawn2 = spawns:FindFirstChild("Spawn2")
+    
+    if not spawn1 or not spawn2 then
+        warn("Map tidak punya Spawn1 dan Spawn2!")
+        return
+    end
+    
+    -- Teleport pemain
+    if player1.Character and player1.Character:FindFirstChild("HumanoidRootPart") then
+        player1.Character.HumanoidRootPart.CFrame = spawn1.CFrame + Vector3.new(0, 3, 0)
+    end
+    
+    if player2.Character and player2.Character:FindFirstChild("HumanoidRootPart") then
+        player2.Character.HumanoidRootPart.CFrame = spawn2.CFrame + Vector3.new(0, 3, 0)
+    end
+    
+    -- Hapus GUI lobby
+    for _, player in pairs({player1, player2}) do
+        lobbyEvent:FireClient(player, "DestroyLobbyGUI")
+    end
+    
+    -- Notifikasi ke semua pemain
+    lobbyEvent:FireAllClients("DuelStarted", player1.Name, player2.Name)
+    
+    -- Set duel state
+    local duelId = tostring(tick())
+    lobbyState.activeDuels[duelId] = {
+        player1 = player1,
+        player2 = player2,
+        map = chosenMap,
+        startTime = tick()
+    }
+    
+    -- Hapus dari waiting list
+    lobbyState.waitingPlayers[player1] = nil
+    lobbyState.waitingPlayers[player2] = nil
+    lobbyState.readyPlayers[player1] = nil
+    lobbyState.readyPlayers[player2] = nil
+    
+    -- Update UI untuk pemain lain di lobby
+    updateLobbyUI()
+    
+    -- Mulai sistem duel (gunakan SimpleGame yang sudah ada)
+    _G.DuelPlayers = {player1, player2}
+    _G.DuelMap = chosenMap
+    
+    -- Set active player
+    _G.CurrentActivePlayer = player1
+    _G.CurrentWind = Vector3.new(math.random(-60, 60), 0, 0)
+    
+    -- Notifikasi ke pemain duel
+    duelEvent:FireClient(player1, "DuelStart", player2, 1)
+    duelEvent:FireClient(player2, "DuelStart", player1, 2)
+    
+    print("Duel started successfully!")
+end
+
+-- Handle player joined
+local function onPlayerAdded(player)
+    -- Tambahkan ke waiting list
+    lobbyState.waitingPlayers[player] = true
+    
+    -- Teleport ke lobby
+    task.wait(2) -- Tunggu character spawn
+    teleportToLobby(player)
+    
+    -- Minta client membuat GUI dengan delay untuk memastikan PlayerGui siap
+    task.spawn(function()
+        task.wait(1) -- Tunggu tambahan untuk PlayerGui
+        requestLobbyGUI(player)
+        task.wait(0.5) -- Tunggu GUI terbuat
+        updateLobbyUI()
+    end)
+    
+    print(player.Name .. " joined the lobby")
+end
+
+-- Handle player left
+local function onPlayerRemoving(player)
+    -- Hapus dari state
+    lobbyState.waitingPlayers[player] = nil
+    lobbyState.readyPlayers[player] = nil
+    
+    -- Cek duel aktif
+    for duelId, duelData in pairs(lobbyState.activeDuels) do
+        if duelData.player1 == player or duelData.player2 == player then
+            -- Hapus map
+            if duelData.map then
+                duelData.map:Destroy()
+            end
+            
+            -- Notifikasi ke lawan
+            local opponent = duelData.player1 == player and duelData.player2 or duelData.player1
+            if opponent and opponent.Parent then
+                duelEvent:FireClient(opponent, "DuelEnded", "Opponent left")
+                task.wait(2)
+                teleportToLobby(opponent)
+                requestLobbyGUI(opponent)
+            end
+            
+            -- Hapus duel
+            lobbyState.activeDuels[duelId] = nil
+            break
+        end
+    end
+    
+    -- Update UI
+    updateLobbyUI()
+    
+    print(player.Name .. " left the lobby")
+end
+
+-- Handle lobby events
+lobbyEvent.OnServerEvent:Connect(function(player, action)
+    if action == "Ready" then
+        if lobbyState.waitingPlayers[player] then
+            lobbyState.readyPlayers[player] = true
+            updateLobbyUI()
+            
+            -- Cek apakah ada 2 pemain siap
+            local readyPlayersList = {}
+            for p in pairs(lobbyState.readyPlayers) do
+                table.insert(readyPlayersList, p)
+            end
+            
+            if #readyPlayersList >= 2 then
+                -- Ambil 2 pemain pertama yang siap
+                local player1 = readyPlayersList[1]
+                local player2 = readyPlayersList[2]
+                
+                -- Mulai duel
+                task.wait(1)
+                startDuel(player1, player2)
+            end
+        end
+    elseif action == "RequestLobbyGUI" then
+        requestLobbyGUI(player)
+        updateLobbyUI()
+    end
+end)
+
+-- Connect events
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+
+-- Handle existing players
+for _, player in pairs(Players:GetPlayers()) do
+    onPlayerAdded(player)
+end
+
+print("LobbySystem initialized")
+print("Players can now choose opponents and duel!")

@@ -1,0 +1,144 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Debris = game:GetService("Debris")
+
+-- Create RemoteEvents if they don't exist
+local turnEvent = ReplicatedStorage:FindFirstChild("TurnSystemEvent")
+if not turnEvent then
+    turnEvent = Instance.new("RemoteEvent")
+    turnEvent.Name = "TurnSystemEvent"
+    turnEvent.Parent = ReplicatedStorage
+end
+
+local tembakEvent = ReplicatedStorage:FindFirstChild("TembakEvent")
+if not tembakEvent then
+    tembakEvent = Instance.new("RemoteEvent")
+    tembakEvent.Name = "TembakEvent"
+    tembakEvent.Parent = ReplicatedStorage
+end
+
+-- Game state
+local gameState = {
+    players = {},
+    currentPlayerIndex = 1,
+    isGameActive = false,
+    turnTime = 20
+}
+
+-- Simple game start function
+local function startGame()
+    local playersInGame = Players:GetPlayers()
+    if #playersInGame < 2 then
+        warn("Need at least 2 players")
+        return
+    end
+    
+    gameState.players = {}
+    for i = 1, math.min(2, #playersInGame) do
+        table.insert(gameState.players, playersInGame[i])
+    end
+    
+    gameState.isGameActive = true
+    gameState.currentPlayerIndex = 1
+    
+    -- Set global variables for other scripts
+    _G.CurrentActivePlayer = gameState.players[1]
+    _G.CurrentWind = Vector3.new(math.random(-60, 60), 0, 0)
+    
+    -- Notify clients
+    turnEvent:FireAllClients("GameStarted", gameState.players, 1, gameState.turnTime)
+    turnEvent:FireAllClients("TurnChanged", 1, gameState.turnTime)
+    turnEvent:FireAllClients("UpdateWind", _G.CurrentWind.X)
+    
+    print("Simple game started with", #gameState.players, "players")
+    print("Active player:", _G.CurrentActivePlayer.Name)
+    print("Wind:", _G.CurrentWind)
+end
+-- Handle shooting
+tembakEvent.OnServerEvent:Connect(function(player, spawnPosition, direction, power)
+    -- Check if player is in duel and it's their turn
+    if not _G.DuelPlayers or not _G.CurrentActivePlayer then return end
+    
+    -- Check if it's player's turn
+    if _G.CurrentActivePlayer ~= player then
+        warn(player.Name .. " tried to shoot out of turn")
+        return
+    end
+    
+    -- Create bullet
+    local peluru = ReplicatedStorage:FindFirstChild("Peluru")
+    if not peluru then
+        warn("Peluru template not found")
+        return
+    end
+    
+    local bullet = peluru:Clone()
+    bullet.Name = "Peluru"
+    bullet.Position = spawnPosition + (direction * 5)
+    bullet.CanCollide = true
+    bullet.Parent = Workspace
+    
+    -- Apply wind
+    local attachment = Instance.new("Attachment", bullet)
+    local windForce = Instance.new("VectorForce")
+    windForce.Force = _G.CurrentWind or Vector3.new(0, 0, 0)
+    windForce.Attachment0 = attachment
+    windForce.ApplyAtCenterOfMass = true
+    windForce.Parent = bullet
+    
+    -- Apply velocity
+    bullet.AssemblyLinearVelocity = direction * (power or 50)
+    
+    -- Camera follow
+    tembakEvent:FireAllClients("FollowCamera", bullet)
+    
+    -- Clean up
+    Debris:AddItem(bullet, 10)
+    
+    -- Next turn
+    nextTurn()
+end)
+
+-- Next turn function
+local function nextTurn()
+    if not _G.DuelPlayers then return end
+    
+    -- Find current player index
+    local currentIndex = 1
+    if _G.DuelPlayers[1] == _G.CurrentActivePlayer then
+        currentIndex = 1
+    else
+        currentIndex = 2
+    end
+    
+    -- Switch to next player
+    local nextIndex = currentIndex == 1 and 2 or 1
+    _G.CurrentActivePlayer = _G.DuelPlayers[nextIndex]
+    _G.CurrentWind = Vector3.new(math.random(-60, 60), 0, 0)
+    
+    turnEvent:FireAllClients("TurnChanged", nextIndex, gameState.turnTime)
+    turnEvent:FireAllClients("UpdateWind", _G.CurrentWind.X)
+    
+    print("Turn changed to:", _G.CurrentActivePlayer.Name)
+end
+-- Handle turn ending
+turnEvent.OnServerEvent:Connect(function(player, action)
+    if action == "EndTurn" and _G.DuelPlayers then
+        if _G.CurrentActivePlayer == player then
+            nextTurn()
+        end
+    end
+end)
+
+-- Player management - disabled for LobbySystem
+-- Players will be handled by LobbySystem
+
+-- Auto-start disabled - using LobbySystem instead
+-- Game will be started by LobbySystem when duel begins
+
+-- Export functions
+_G.StartSimpleGame = startGame
+
+print("SimpleGame initialized")
+print("Game will start when 2+ players join")

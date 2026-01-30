@@ -1,0 +1,75 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+
+-- Fungsi untuk membuat UI Health Bar
+local function createHealthBar(character)
+	local humanoid = character:WaitForChild("Humanoid")
+	local head = character:WaitForChild("Head")
+
+	-- Cek apakah sudah ada HP Bar, jika ada hapus dulu
+	if head:FindFirstChild("HP_GUI") then
+		head.HP_GUI:Destroy()
+	end
+
+	-- 1. Buat BillboardGui (Wadah UI di atas kepala)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "HP_GUI"
+	billboard.Adornee = head
+	billboard.Size = UDim2.new(4, 0, 0.5, 0) -- Ukuran Bar
+	billboard.StudsOffset = Vector3.new(0, 2.5, 0) -- Tinggi di atas kepala
+	billboard.AlwaysOnTop = true
+	billboard.Parent = head
+
+	-- 2. Buat Background (Warna Hitam/Merah Gelap)
+	local bg = Instance.new("Frame")
+	bg.Name = "Background"
+	bg.Size = UDim2.new(1, 0, 1, 0)
+	bg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	bg.BorderSizePixel = 0
+	bg.Parent = billboard
+
+	-- Tambahkan Corner agar tumpul
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.5, 0)
+	corner.Parent = bg
+
+	-- 3. Buat Fill (Isi Warna Hijau)
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.new(1, 0, 1, 0) -- Mulai penuh (100%)
+	fill.BackgroundColor3 = Color3.fromRGB(85, 255, 127)
+	fill.BorderSizePixel = 0
+	fill.Parent = bg
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0.5, 0)
+	fillCorner.Parent = fill
+
+	-- 4. Logika Update HP
+	local function updateHealth()
+		local percent = math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1)
+
+		-- Animasi perubahan bar
+		local tween = TweenService:Create(fill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = UDim2.new(percent, 0, 1, 0),
+			BackgroundColor3 = Color3.fromHSV(percent * 0.3, 1, 1) -- Berubah warna dari Hijau -> Kuning -> Merah
+		})
+		tween:Play()
+
+		-- Sembunyikan jika HP penuh (Opsional, hapus if ini jika ingin selalu tampil)
+		-- billboard.Enabled = percent < 1
+	end
+
+	-- Hubungkan event
+	humanoid.HealthChanged:Connect(updateHealth)
+	updateHealth() -- Update awal
+end
+
+-- Hubungkan ke setiap pemain yang masuk
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(createHealthBar)
+	-- Jika karakter sudah ada saat script jalan (untuk testing di Studio)
+	if player.Character then
+		createHealthBar(player.Character)
+	end
+end)

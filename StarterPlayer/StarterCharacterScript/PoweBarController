@@ -1,0 +1,109 @@
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+-- Get references to UI elements
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local screenGui = playerGui:WaitForChild("PowerBarGui")
+local containerFrame = screenGui:WaitForChild("PowerBarContainer")
+local powerBar = containerFrame:WaitForChild("PowerBar") -- Menggunakan PowerBar yang benar
+local powerLabel = containerFrame:WaitForChild("PowerLabel")
+local glowEffect = containerFrame:WaitForChild("GlowEffect")
+
+-- Power bar settings
+local fillSpeed = 0.5 -- Speed of filling (0.5 = 50% per second)
+local maxPower = 1 -- Maximum power (100%)
+local currentPower = 0
+local isCharging = false
+local fillTween = nil
+
+-- Function to update power bar visually
+local function updatePowerBar(power)
+    powerBar.Size = UDim2.new(power, 0, 1, 0)
+    powerLabel.Text = math.floor(power * 100) .. "%"
+    
+    -- Change color based on power level
+    if power < 0.33 then
+        powerBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Green
+    elseif power < 0.66 then
+        powerBar.BackgroundColor3 = Color3.fromRGB(255, 255, 0) -- Yellow
+    else
+        powerBar.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- Red
+    end
+end
+
+-- Function to start charging
+local function startCharging()
+    if isCharging then return end
+    
+    isCharging = true
+    currentPower = 0
+    
+    -- Show glow effect
+    glowEffect.Visible = true
+    
+    -- Create tween for smooth filling
+    fillTween = TweenService:Create(
+        powerBar,
+        TweenInfo.new(maxPower / fillSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+        {Size = UDim2.new(maxPower, 0, 1, 0)}
+    )
+    
+    fillTween:Play()
+    
+    -- Update color during charging
+    local connection
+    connection = game:GetService("RunService").Heartbeat:Connect(function()
+        if isCharging then
+            currentPower = math.min(currentPower + fillSpeed * game:GetService("RunService").Heartbeat:Wait(), maxPower)
+            updatePowerBar(currentPower)
+        else
+            connection:Disconnect()
+        end
+    end)
+end
+
+-- Function to stop charging
+local function stopCharging()
+    if not isCharging then return end
+    
+    isCharging = false
+    
+    -- Hide glow effect
+    glowEffect.Visible = false
+    
+    if fillTween then
+        fillTween:Cancel()
+        fillTween = nil
+    end
+    
+    -- You can use currentPower here for whatever action you want
+    print("Power released: " .. math.floor(currentPower * 100) .. "%")
+    
+    -- Optional: Reset the power bar after a delay
+    task.wait(0.5)
+    if not isCharging then
+        updatePowerBar(0)
+        currentPower = 0
+    end
+end
+
+-- Connect to left mouse click input
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        startCharging()
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        stopCharging()
+    end
+end)
+
+-- Initialize power bar
+updatePowerBar(0)

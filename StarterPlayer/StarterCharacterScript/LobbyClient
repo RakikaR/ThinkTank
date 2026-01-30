@@ -1,0 +1,587 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
+
+local player = Players.LocalPlayer
+local lobbyEvent = ReplicatedStorage:WaitForChild("LobbyEvent")
+local duelEvent = ReplicatedStorage:WaitForChild("DuelEvent")
+
+-- State
+local inDuel = false
+local duelOpponent = nil
+local myTurnNumber = 0
+local lobbyGUI = nil
+
+-- Fungsi untuk membuat suara notifikasi
+local function playNotificationSound()
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://131961023"
+    sound.Volume = 0.3
+    sound.Parent = SoundService
+    sound:Play()
+    game:GetService("Debris"):AddItem(sound, 2)
+end
+
+-- Fungsi untuk membuat GUI lobby
+local function createLobbyGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Hapus GUI lama jika ada
+    if lobbyGUI then
+        lobbyGUI:Destroy()
+    end
+    
+    -- Buat ScreenGui
+    lobbyGUI = Instance.new("ScreenGui")
+    lobbyGUI.Name = "LobbyGUI"
+    lobbyGUI.Parent = playerGui
+    lobbyGUI.ResetOnSpawn = false
+    
+    -- Main Frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Parent = lobbyGUI
+    mainFrame.Size = UDim2.new(0, 400, 0, 500)
+    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    mainFrame.BorderSizePixel = 0
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 15)
+    corner.Parent = mainFrame
+    
+    -- Title
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Parent = mainFrame
+    title.Size = UDim2.new(1, -40, 0, 50)
+    title.Position = UDim2.new(0, 20, 0, 20)
+    title.BackgroundTransparency = 1
+    title.Text = "⚔️ DUEL ARENA ⚔️"
+    title.TextColor3 = Color3.fromRGB(255, 215, 0)
+    title.TextScaled = true
+    title.Font = Enum.Font.SourceSansBold
+    
+    -- Players List Frame
+    local playersFrame = Instance.new("Frame")
+    playersFrame.Name = "PlayersFrame"
+    playersFrame.Parent = mainFrame
+    playersFrame.Size = UDim2.new(1, -40, 0, 200)
+    playersFrame.Position = UDim2.new(0, 20, 0, 80)
+    playersFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    playersFrame.BorderSizePixel = 0
+    
+    local playersCorner = Instance.new("UICorner")
+    playersCorner.CornerRadius = UDim.new(0, 10)
+    playersCorner.Parent = playersFrame
+    
+    -- Players Title
+    local playersTitle = Instance.new("TextLabel")
+    playersTitle.Name = "PlayersTitle"
+    playersTitle.Parent = playersFrame
+    playersTitle.Size = UDim2.new(1, -20, 0, 30)
+    playersTitle.Position = UDim2.new(0, 10, 0, 5)
+    playersTitle.BackgroundTransparency = 1
+    playersTitle.Text = "👥 Pemain di Lobby"
+    playersTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+    playersTitle.TextScaled = true
+    playersTitle.Font = Enum.Font.SourceSans
+    
+    -- Players List (ScrollingFrame)
+    local playersList = Instance.new("ScrollingFrame")
+    playersList.Name = "PlayersList"
+    playersList.Parent = playersFrame
+    playersList.Size = UDim2.new(1, -20, 0, 160)
+    playersList.Position = UDim2.new(0, 10, 0, 35)
+    playersList.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    playersList.BorderSizePixel = 0
+    playersList.ScrollBarThickness = 8
+    
+    local listCorner = Instance.new("UICorner")
+    listCorner.CornerRadius = UDim.new(0, 5)
+    listCorner.Parent = playersList
+    
+    -- Status Frame
+    local statusFrame = Instance.new("Frame")
+    statusFrame.Name = "StatusFrame"
+    statusFrame.Parent = mainFrame
+    statusFrame.Size = UDim2.new(1, -40, 0, 80)
+    statusFrame.Position = UDim2.new(0, 20, 0, 300)
+    statusFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    statusFrame.BorderSizePixel = 0
+    
+    local statusCorner = Instance.new("UICorner")
+    statusCorner.CornerRadius = UDim.new(0, 10)
+    statusCorner.Parent = statusFrame
+    
+    -- Status Label
+    local statusLabel = Instance.new("TextLabel")
+    statusLabel.Name = "StatusLabel"
+    statusLabel.Parent = statusFrame
+    statusLabel.Size = UDim2.new(1, -20, 0, 80)
+    statusLabel.Position = UDim2.new(0, 10, 0, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = "🎮 Menunggu pemain lain..."
+    statusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    statusLabel.TextScaled = true
+    statusLabel.Font = Enum.Font.SourceSans
+    statusLabel.TextWrapped = true
+    
+    -- Ready Button
+    local readyButton = Instance.new("TextButton")
+    readyButton.Name = "ReadyButton"
+    readyButton.Parent = mainFrame
+    readyButton.Size = UDim2.new(0, 150, 0, 50)
+    readyButton.Position = UDim2.new(0.5, -75, 0, 400)
+    readyButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    readyButton.BorderSizePixel = 0
+    readyButton.Text = "🎯 SIAP DUEL!"
+    readyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    readyButton.TextScaled = true
+    readyButton.Font = Enum.Font.SourceSansBold
+    
+    local buttonCorner = Instance.new("UICorner")
+    buttonCorner.CornerRadius = UDim.new(0, 10)
+    buttonCorner.Parent = readyButton
+    
+    -- Button hover effect
+    readyButton.MouseEnter:Connect(function()
+        readyButton.BackgroundColor3 = Color3.fromRGB(70, 200, 70)
+    end)
+    
+    readyButton.MouseLeave:Connect(function()
+        readyButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    end)
+    
+    -- Button click
+    readyButton.MouseButton1Click:Connect(function()
+        lobbyEvent:FireServer("Ready")
+    end)
+    
+    return lobbyGUI
+end
+
+-- Fungsi untuk update GUI lobby
+local function updateLobbyGUI(playerList, readyList)
+    if not lobbyGUI then return end
+    
+    local playersList = lobbyGUI.MainFrame.PlayersFrame.PlayersList
+    local statusLabel = lobbyGUI.MainFrame.StatusFrame.StatusLabel
+    local readyButton = lobbyGUI.MainFrame.ReadyButton
+    
+    -- Clear existing player entries
+    for _, child in pairs(playersList:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+    
+    -- Add current players
+    local yOffset = 0
+    for _, playerInfo in pairs(playerList) do
+        local playerFrame = Instance.new("Frame")
+        playerFrame.Name = playerInfo.name
+        playerFrame.Parent = playersList
+        playerFrame.Size = UDim2.new(1, -10, 0, 40)
+        playerFrame.Position = UDim2.new(0, 5, 0, yOffset)
+        playerFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+        playerFrame.BorderSizePixel = 0
+        
+        local frameCorner = Instance.new("UICorner")
+        frameCorner.CornerRadius = UDim.new(0, 5)
+        frameCorner.Parent = playerFrame
+        
+        -- Player name
+        local nameLabel = Instance.new("TextLabel")
+        nameLabel.Parent = playerFrame
+        nameLabel.Size = UDim2.new(0, 200, 1, 0)
+        nameLabel.Position = UDim2.new(0, 10, 0, 0)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Text = playerInfo.name
+        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        nameLabel.TextScaled = true
+        nameLabel.Font = Enum.Font.SourceSans
+        nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        -- Ready status
+        local readyLabel = Instance.new("TextLabel")
+        readyLabel.Parent = playerFrame
+        readyLabel.Size = UDim2.new(0, 100, 1, 0)
+        readyLabel.Position = UDim2.new(1, -110, 0, 0)
+        readyLabel.BackgroundTransparency = 1
+        readyLabel.Text = playerInfo.ready and "✅ SIAP" or "⏳ MENUNGGU"
+        readyLabel.TextColor3 = playerInfo.ready and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 255, 100)
+        readyLabel.TextScaled = true
+        readyLabel.Font = Enum.Font.SourceSansBold
+        readyLabel.TextXAlignment = Enum.TextXAlignment.Right
+        
+        yOffset = yOffset + 45
+    end
+    
+    -- Update status
+    local readyCount = 0
+    for _ in pairs(readyList) do
+        readyCount = readyCount + 1
+    end
+    
+    if readyCount >= 2 then
+        statusLabel.Text = "⚔️ Duel akan dimulai segera!"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+        readyButton.Visible = false
+    else
+        statusLabel.Text = string.format("🎮 %d/%d pemain siap untuk duel", readyCount, #playerList)
+        statusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        readyButton.Visible = true
+    end
+    
+    -- Update canvas size
+    playersList.CanvasSize = UDim2.new(0, 0, 0, yOffset)
+end
+
+-- Fungsi untuk membuat GUI duel
+local function createDuelGUI()
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    -- Hapus GUI lama
+    local oldGUI = playerGui:FindFirstChild("DuelGUI")
+    if oldGUI then
+        oldGUI:Destroy()
+    end
+    
+    -- Buat ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "DuelGUI"
+    screenGui.Parent = playerGui
+    screenGui.ResetOnSpawn = false
+    
+    -- Main Frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Parent = screenGui
+    mainFrame.Size = UDim2.new(0, 300, 0, 150)
+    mainFrame.Position = UDim2.new(0.5, -150, 0, 20)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    mainFrame.BorderSizePixel = 0
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = mainFrame
+    
+    -- Turn Label
+    local turnLabel = Instance.new("TextLabel")
+    turnLabel.Name = "TurnLabel"
+    turnLabel.Parent = mainFrame
+    turnLabel.Size = UDim2.new(1, -20, 0, 35)
+    turnLabel.Position = UDim2.new(0, 10, 0, 5)
+    turnLabel.BackgroundTransparency = 1
+    turnLabel.Text = "Menunggu giliran..."
+    turnLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    turnLabel.TextScaled = true
+    turnLabel.Font = Enum.Font.SourceSansBold
+    
+    -- Opponent Label
+    local opponentLabel = Instance.new("TextLabel")
+    opponentLabel.Name = "OpponentLabel"
+    opponentLabel.Parent = mainFrame
+    opponentLabel.Size = UDim2.new(1, -20, 0, 25)
+    opponentLabel.Position = UDim2.new(0, 10, 0, 40)
+    opponentLabel.BackgroundTransparency = 1
+    opponentLabel.Text = "Lawan: -"
+    opponentLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+    opponentLabel.TextScaled = true
+    opponentLabel.Font = Enum.Font.SourceSans
+    
+    -- Wind Label
+    local windLabel = Instance.new("TextLabel")
+    windLabel.Name = "WindLabel"
+    windLabel.Parent = mainFrame
+    windLabel.Size = UDim2.new(1, -20, 0, 25)
+    windLabel.Position = UDim2.new(0, 10, 0, 65)
+    windLabel.BackgroundTransparency = 1
+    windLabel.Text = "Angin: 0"
+    windLabel.TextColor3 = Color3.fromRGB(150, 200, 255)
+    windLabel.TextScaled = true
+    windLabel.Font = Enum.Font.SourceSansItalic
+    
+    -- End Turn Button
+    local endTurnButton = Instance.new("TextButton")
+    endTurnButton.Name = "EndTurnButton"
+    endTurnButton.Parent = mainFrame
+    endTurnButton.Size = UDim2.new(1, -20, 0, 35)
+    endTurnButton.Position = UDim2.new(0, 10, 0, 95)
+    endTurnButton.BackgroundColor3 = Color3.fromRGB(50, 150, 50)
+    endTurnButton.Text = "Akhiri Giliran"
+    endTurnButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    endTurnButton.TextScaled = true
+    endTurnButton.Font = Enum.Font.SourceSansBold
+    endTurnButton.Visible = false
+    
+    local buttonCorner = Instance.new("UICorner", endTurnButton)
+    buttonCorner.CornerRadius = UDim.new(0, 8)
+    
+    return screenGui
+end
+
+-- Fungsi untuk update GUI duel
+local function updateDuelGUI(isMyTurn, windPower)
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    
+    local duelGUI = playerGui:FindFirstChild("DuelGUI")
+    if not duelGUI then return end
+    
+    local turnLabel = duelGUI.MainFrame.TurnLabel
+    local endTurnButton = duelGUI.MainFrame.EndTurnButton
+    local windLabel = duelGUI.MainFrame.WindLabel
+    
+    if isMyTurn then
+        turnLabel.Text = "🎯 Giliran Anda!"
+        turnLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+        endTurnButton.Visible = true
+        duelGUI.MainFrame.BackgroundColor3 = Color3.fromRGB(50, 100, 50)
+    else
+        turnLabel.Text = "⏳ Giliran Lawan"
+        turnLabel.TextColor3 = Color3.fromRGB(255, 150, 150)
+        endTurnButton.Visible = false
+        duelGUI.MainFrame.BackgroundColor3 = Color3.fromRGB(100, 50, 50)
+    end
+    
+    if windPower then
+        windLabel.Text = "💨 Angin: " .. tostring(windPower)
+    end
+end
+
+-- Fungsi untuk menembak
+local function shoot(power)
+    if not inDuel or not _G.CurrentActivePlayer or _G.CurrentActivePlayer ~= player then
+        warn("Bukan giliran Anda atau tidak dalam duel!")
+        return
+    end
+    
+    local character = player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return
+    end
+    
+    -- Hitung arah tembakan
+    local camera = workspace.CurrentCamera
+    local mousePos = game:GetService("UserInputService"):GetMouseLocation()
+    local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+    local direction = Vector3.new(ray.Direction.X, 0, ray.Direction.Z).Unit
+    
+    local spawnPosition = character.HumanoidRootPart.Position
+    
+    -- Kirim ke server
+    local tembakEvent = ReplicatedStorage:FindFirstChild("TembakEvent")
+    if tembakEvent then
+        tembakEvent:FireServer(spawnPosition, direction, power)
+    end
+    
+    -- Akhiri giliran
+    local turnEvent = ReplicatedStorage:FindFirstChild("TurnSystemEvent")
+    if turnEvent then
+        turnEvent:FireServer("EndTurn")
+    end
+end
+
+-- Input handling untuk shooting
+local UserInputService = game:GetService("UserInputService")
+local isCharging = false
+local chargeStartTime = 0
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and inDuel and _G.CurrentActivePlayer == player then
+        isCharging = true
+        chargeStartTime = tick()
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and isCharging then
+        isCharging = false
+        
+        -- Hitung power
+        local chargeTime = math.min(tick() - chargeStartTime, 3)
+        local power = (chargeTime / 3) * 150
+        
+        shoot(power)
+    end
+end)
+
+-- Handle lobby events
+lobbyEvent.OnClientEvent:Connect(function(action, ...)
+    if action == "CreateLobbyGUI" then
+        createLobbyGUI()
+    elseif action == "UpdateLobbyUI" then
+        local playerList, readyList = ...
+        updateLobbyGUI(playerList, readyList)
+    elseif action == "DestroyLobbyGUI" then
+        if lobbyGUI then
+            lobbyGUI:Destroy()
+            lobbyGUI = nil
+        end
+    elseif action == "DuelStarted" then
+        local player1Name, player2Name = ...
+        
+        -- Tampilkan notifikasi
+        StarterGui:SetCore("ChatMakeSystemMessage", {
+            Text = "⚔️ Duel dimulai: " .. player1Name .. " vs " .. player2Name;
+            Color = Color3.fromRGB(255, 215, 0);
+        })
+        
+        playNotificationSound()
+    end
+end)
+
+-- Handle duel events
+duelEvent.OnClientEvent:Connect(function(action, ...)
+    if action == "DuelStart" then
+        local opponent, turnNum = ...
+        
+        inDuel = true
+        duelOpponent = opponent
+        myTurnNumber = turnNum
+        
+        -- Buat GUI duel
+        createDuelGUI()
+        
+        -- Update GUI
+        updateDuelGUI(turnNum == 1, _G.CurrentWind and _G.CurrentWind.X or 0)
+        
+        -- Update opponent label
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if playerGui then
+            local duelGUI = playerGui:FindFirstChild("DuelGUI")
+            if duelGUI then
+                duelGUI.MainFrame.OpponentLabel.Text = "Lawan: " .. opponent.Name
+            end
+        end
+        
+        -- Notifikasi
+        StarterGui:SetCore("ChatMakeSystemMessage", {
+            Text = "🎯 Duel dimulai melawan " .. opponent.Name .. "!";
+            Color = Color3.fromRGB(100, 255, 100);
+        })
+        
+        playNotificationSound()
+        
+    elseif action == "DuelEnded" then
+        local reason = ...
+        
+        inDuel = false
+        duelOpponent = nil
+        myTurnNumber = 0
+        
+        -- Hapus GUI duel
+        local playerGui = player:FindFirstChild("PlayerGui")
+        if playerGui then
+            local duelGUI = playerGui:FindFirstChild("DuelGUI")
+            if duelGUI then
+                duelGUI:Destroy()
+            end
+        end
+        
+        -- Notifikasi
+        StarterGui:SetCore("ChatMakeSystemMessage", {
+            Text = "🏁 Duel berakhir: " .. reason;
+            Color = Color3.fromRGB(255, 100, 100);
+        })
+        
+        playNotificationSound()
+    end
+end)
+
+-- Handle turn changes
+local turnEvent = ReplicatedStorage:FindFirstChild("TurnSystemEvent")
+if turnEvent then
+    turnEvent.OnClientEvent:Connect(function(action, ...)
+        if action == "TurnChanged" and inDuel then
+            local currentPlayerIndex = ...
+            local isMyTurn = (currentPlayerIndex == myTurnNumber)
+            
+            updateDuelGUI(isMyTurn, _G.CurrentWind and _G.CurrentWind.X or 0)
+            
+            if isMyTurn then
+                playNotificationSound()
+                
+                StarterGui:SetCore("ChatMakeSystemMessage", {
+                    Text = "🎯 Giliran Anda!";
+                    Color = Color3.fromRGB(100, 255, 100);
+                })
+            end
+            
+        elseif action == "UpdateWind" and inDuel then
+            local windPower = ...
+            updateDuelGUI(_G.CurrentActivePlayer == player, windPower)
+        end
+    end)
+end
+
+-- Handle camera follow
+local tembakEvent = ReplicatedStorage:FindFirstChild("TembakEvent")
+if tembakEvent then
+    tembakEvent.OnClientEvent:Connect(function(action, ...)
+        if action == "FollowCamera" then
+            local peluru = ...
+            if peluru then
+                local camera = workspace.CurrentCamera
+                camera.CameraSubject = peluru
+                
+                -- Kembalikan kamera setelah 5 detik
+                task.wait(5)
+                if peluru and peluru.Parent then
+                    local character = player.Character
+                    if character and character:FindFirstChild("Humanoid") then
+                        camera.CameraSubject = character.Humanoid
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Handle end turn button
+player.CharacterAdded:Connect(function(character)
+    character:WaitForChild("Humanoid")
+    
+    task.wait(1)
+    
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then
+        local duelGUI = playerGui:FindFirstChild("DuelGUI")
+        if duelGUI then
+            local endTurnButton = duelGUI.MainFrame.EndTurnButton
+            if endTurnButton then
+                endTurnButton.MouseButton1Click:Connect(function()
+                    if inDuel and _G.CurrentActivePlayer == player then
+                        local turnEvent = ReplicatedStorage:FindFirstChild("TurnSystemEvent")
+                        if turnEvent then
+                            turnEvent:FireServer("EndTurn")
+                        end
+                    end
+                end)
+            end
+        end
+    end
+end)
+
+-- Initialize lobby GUI when player loads
+player.CharacterAdded:Connect(function()
+    task.wait(2) -- Wait for character to fully load
+    lobbyEvent:FireServer("RequestLobbyGUI")
+end)
+
+-- If character already exists, create GUI immediately
+if player.Character then
+    task.wait(1)
+    lobbyEvent:FireServer("RequestLobbyGUI")
+end
+
+print("LobbyClient initialized")
+print("Player can now use lobby system and duel!")

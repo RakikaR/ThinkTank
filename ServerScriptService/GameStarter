@@ -1,0 +1,50 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Get references
+local turnEvent = ReplicatedStorage:WaitForChild("TurnSystemEvent")
+
+-- Simple game start function
+local function startSimpleGame()
+	print("=== Starting Simple Game ===")
+	
+	local playersInGame = Players:GetPlayers()
+	if #playersInGame < 2 then
+		warn("Need at least 2 players to start game")
+		return
+	end
+	
+	-- Set first player as active
+	_G.CurrentActivePlayer = playersInGame[1]
+	_G.CurrentWind = Vector3.new(math.random(-60, 60), 0, 0)
+	
+	print("Active player:", _G.CurrentActivePlayer.Name)
+	print("Wind:", _G.CurrentWind)
+	
+	-- Notify clients
+	turnEvent:FireAllClients("GameStarted", playersInGame, 1, 20)
+	turnEvent:FireAllClients("TurnChanged", 1, 20)
+	turnEvent:FireAllClients("UpdateWind", _G.CurrentWind.X)
+	
+	print("Simple game started successfully!")
+end
+
+-- Export function
+_G.StartSimpleGame = startSimpleGame
+
+-- Auto-start if enough players
+Players.PlayerAdded:Connect(function()
+	task.wait(2)
+	if #Players:GetPlayers() >= 2 then
+		startSimpleGame()
+	end
+end)
+
+-- Start immediately if enough players
+if #Players:GetPlayers() >= 2 then
+	task.wait(1)
+	startSimpleGame()
+end
+
+print("GameStarter initialized")
+print("Use _G.StartSimpleGame() to start game manually")

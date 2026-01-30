@@ -1,0 +1,50 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local Debris = game:GetService("Debris")
+
+local peluruTemplate = ReplicatedStorage:WaitForChild("Peluru") -- Pastikan nama di ReplicatedStorage adalah 'Peluru'
+local tembakEvent = ReplicatedStorage:WaitForChild("TembakEvent")
+
+-- Settings
+local MAX_POWER = 150 
+local PELURU_LIFETIME = 10
+
+-- Fungsi Tembak
+local function shootPeluru(player, spawnPosition, direction, power)
+	-- Validasi Giliran (Mengambil state dari TurnBasedSystem)
+	-- Pastikan TurnBasedSystem sudah mengeset _G.CurrentActivePlayer
+	if _G.CurrentActivePlayer ~= player then 
+		warn(player.Name .. " mencoba menembak di luar giliran!")
+		return 
+	end
+
+	power = math.clamp(power or 50, 0, MAX_POWER)
+	local character = player.Character
+	if not character then return end
+
+	local peluru = peluruTemplate:Clone()
+	peluru.Name = "Peluru" -- Sangat penting agar terdeteksi TerrainHandler
+	peluru.Position = spawnPosition + (direction * 5)
+	peluru.CanCollide = true
+	peluru.Parent = Workspace
+
+	-- Penerapan Angin (Mengambil nilai dari _G.CurrentWind)
+	local currentWind = _G.CurrentWind or Vector3.new(0,0,0)
+	local attachment = Instance.new("Attachment", peluru)
+	local windForce = Instance.new("VectorForce")
+	windForce.Force = currentWind
+	windForce.Attachment0 = attachment
+	windForce.ApplyAtCenterOfMass = true
+	windForce.Parent = peluru
+
+	-- Kecepatan Tembakan
+	peluru.AssemblyLinearVelocity = direction * power
+
+	-- Beri tahu client untuk mengikuti peluru dengan kamera
+	tembakEvent:FireAllClients("FollowCamera", peluru)
+
+	Debris:AddItem(peluru, PELURU_LIFETIME)
+end
+
+tembakEvent.OnServerEvent:Connect(shootPeluru)

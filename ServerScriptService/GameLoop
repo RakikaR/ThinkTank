@@ -1,0 +1,137 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+-- Referensi Folder
+local mapsFolder = ServerStorage:WaitForChild("Maps")
+local lobbySpawn = Workspace:WaitForChild("LobbyMap"):WaitForChild("SpawnLocation")
+local turnEvent = ReplicatedStorage:WaitForChild("TurnSystemEvent")
+
+-- Buat BindableEvent untuk komunikasi game end
+local gameEndSignal = ReplicatedStorage:FindFirstChild("GameEndSignal")
+if not gameEndSignal then
+	gameEndSignal = Instance.new("BindableEvent")
+	gameEndSignal.Name = "GameEndSignal"
+	gameEndSignal.Parent = ReplicatedStorage
+end
+
+-- Settings
+local MIN_PLAYERS = 2
+local INTERMISSION_TIME = 10 -- Waktu tunggu di lobby
+
+local isGameRunning = false
+local currentMapModel = nil
+
+-- Fungsi Teleport Pemain
+local function teleportPlayersTo(destinationFolder)
+	local players = Players:GetPlayers()
+	local spawns = destinationFolder:GetChildren()
+
+	for i, player in ipairs(players) do
+		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			-- Jika destinasi adalah folder spawns (Game)
+			if destinationFolder.Name == "Spawns" then
+				-- Pilih spawn berdasarkan urutan (Player1 ke Spawn1, dst)
+				local targetSpawn = spawns[i] or spawns[1] 
+				player.Character.HumanoidRootPart.CFrame = targetSpawn.CFrame + Vector3.new(0, 3, 0)
+			else
+				-- Jika destinasi adalah Spawn Lobby
+				player.Character.HumanoidRootPart.CFrame = destinationFolder.CFrame + Vector3.new(0, 3, 0)
+			end
+		end
+	end
+end
+
+-- Fungsi Load Map
+local function loadMap()
+	-- Pilih map secara acak (jika ada banyak map)
+	local availableMaps = mapsFolder:GetChildren()
+	local chosenMap = availableMaps[math.random(1, #availableMaps)]
+
+	-- Clone map ke Workspace
+	currentMapModel = chosenMap:Clone()
+	currentMapModel.Parent = Workspace
+
+	print("Map dimuat: " .. currentMapModel.Name)
+	return currentMapModel
+end
+
+-- Fungsi Cleanup (Selesai Game)
+local function cleanupGame()
+	if currentMapModel then
+		currentMapModel:Destroy()
+		currentMapModel = nil
+	end
+
+	-- Kembalikan semua pemain ke Lobby
+	teleportPlayersTo(lobbySpawn)
+	print("Pemain dikembalikan ke Lobby")
+end
+
+-- MAIN LOOP
+while true do
+	-- 1. FASE LOBBY (Intermission)
+	isGameRunning = false
+	ReplicatedStorage.TurnSystemEvent:FireAllClients("UpdateStatus", "Menunggu Pemain...")
+
+	repeat
+		task.wait(1)
+		local count = #Players:GetPlayers()
+		ReplicatedStorage.TurnSystemEvent:FireAllClients("UpdateStatus", "Butuh " .. (MIN_PLAYERS - count) .. " pemain lagi")
+	until #Players:GetPlayers() >= MIN_PLAYERS
+
+	-- Hitung mundur mulai
+	for i = INTERMISSION_TIME, 1, -1 do
+		ReplicatedStorage.TurnSystemEvent:FireAllClients("UpdateStatus", "Game mulai dalam: " .. i)
+		task.wait(1)
+	end
+
+	-- 2. FASE PERSIAPAN GAME
+	isGameRunning = true
+	ReplicatedStorage.TurnSystemEvent:FireAllClients("UpdateStatus", "Loading Map...")
+
+	local map = loadMap()
+	local spawnFolder = map:FindFirstChild("Spawns")
+
+	if not spawnFolder then
+		warn("Map tidak punya folder Spawns!")
+		cleanupGame()
+		continue -- Ulang loop jika error
+	end
+
+	task.wait(1) -- Jeda sebentar agar map ter-render
+
+	-- Teleport pemain ke Map
+	teleportPlayersTo(spawnFolder)
+
+	-- 3. FASE GAMEPLAY (Panggil TurnBasedSystem yang sudah ada)
+	-- Kita gunakan fungsi global yang kita buat di TurnBasedSystem (nanti kita edit dikit)
+	if _G.StartTurnGame then
+		_G.StartTurnGame() -- Memulai logika giliran
+	end
+
+	-- Tunggu sampai game selesai
+	-- Kita butuh sinyal dari TurnBasedSystem bahwa game sudah berakhir
+	local gameEnded = false
+	local connection
+
+	connection = turnEvent.OnServerEvent:Connect(function(player, action)
+		if action == "GameEndedConfirm" then -- Nanti kita buat sinyal ini
+			gameEnded = true
+		end
+	end)
+
+	-- Loop tunggu sampai ada pemenang atau semua keluar
+	repeat
+		task.wait(1)
+		if #Players:GetPlayers() < 2 then gameEnded = true end
+	until gameEnded
+
+	if connection then connection:Disconnect() end
+
+	-- 4. FASE SELESAI
+	ReplicatedStorage.TurnSystemEvent:FireAllClients("UpdateStatus", "Game Selesai! Kembali ke Lobby...")
+	task.wait(3)
+	cleanupGame()
+end
